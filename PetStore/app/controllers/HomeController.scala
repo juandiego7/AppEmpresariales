@@ -51,7 +51,27 @@ class HomeController @Inject()(db: Database, cc: ControllerComponents) extends A
   }
 
   def getPet(name: String) = Action {
-    val json = Json.toJson(pets.find(p => p.name == name))
+    val conn = db.getConnection()
+    pets = List[Pet]()
+    try {
+      val stmt = conn.createStatement
+      val rs = stmt.executeQuery("SELECT * FROM pet WHERE name like '"+name+"%'")
+      while(rs.next()){
+        var p = Pet(
+          rs.getInt("id"),
+          rs.getString("name"),
+          rs.getString("kind"),
+          rs.getString("gender"),
+          rs.getString("location"),
+          rs.getString("state")
+        )
+        pets = pets :+ p
+      }
+    } 
+    finally {
+      conn.close()      
+    }
+    val json = Json.toJson(pets)
     Ok(json)
   }
 
@@ -66,8 +86,15 @@ class HomeController @Inject()(db: Database, cc: ControllerComponents) extends A
           pets.find(_.id == success.get.id) match{
             case Some(q) =>  Option("Ya existe una mascota con la misma identificaión")
 
-            case None => pets = pets :+ pet
-                         Option("Ingreso exitoso")
+            case None => val conn = db.getConnection()
+                          try {
+                            val stmt = conn.createStatement();
+                            val rs = stmt.executeUpdate("INSERT INTO pet VALUES("+pet.id+",'"+pet.name+"','"+pet.kind+"','"+pet.gender+"','"+pet.location+"','"+pet.state+"')")
+                          }finally{
+                            conn.close()
+                          }
+                          pets = pets :+ pet
+                          Option("Ingreso exitoso")
           }
         }
         
@@ -82,7 +109,14 @@ class HomeController @Inject()(db: Database, cc: ControllerComponents) extends A
   }
 
   def deletePet(id: Int) = Action {
-    pets = pets.filter(p => p.id != id)
+    val conn = db.getConnection()
+    try {
+      val stmt = conn.createStatement();
+      val rs = stmt.executeUpdate("DELETE FROM pet WHERE id = " + id)
+    }finally{
+      conn.close()
+    }
+    //pets = pets.filter(p => p.id != id)
     Ok("Mascota borrada") 
   }
 
@@ -91,10 +125,19 @@ class HomeController @Inject()(db: Database, cc: ControllerComponents) extends A
 
     bodyAsJson.validate[Pet] match {
       case success: JsSuccess[Pet] =>
-        var newPet = Pet(success.get.id, success.get.name, success.get.kind, success.get.gender, success.get.location, success.get.state)
-        pets = pets.map(x => if (x.id == success.get.id) newPet else x)
+        var pet = Pet(success.get.id, success.get.name, success.get.kind, success.get.gender, success.get.location, success.get.state)
+
+        val conn = db.getConnection()
+        try {
+          val stmt = conn.createStatement();          
+          val rs = stmt.executeUpdate("UPDATE pet SET name = '"+pet.name+"', kind = '"+pet.kind+"', gender = '"+pet.gender+"', location = '"+pet.location+"',state = '"+pet.state+"' WHERE id = "+pet.id)
+        }finally{
+          conn.close()
+        }
+
+        //pets = pets.map(x => if (x.id == success.get.id) newPet else x)
         Ok(Json.toJson(
-          Map("message" -> "Actualización exitosa")
+          Map("message" -> "Los datos de la mascota han sido actualizados")
         ))
 
       case e:JsError => BadRequest(Json.toJson(
